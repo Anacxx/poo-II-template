@@ -1,9 +1,11 @@
 import express, { Request, Response } from 'express'
 import cors from 'cors'
 import { TAccountDB, TAccountDBPost, TUserDB, TUserDBPost } from './types'
-import { db } from './database/knex'
+
 import { User } from './models/User'
 import { Account } from './models/Account'
+import { UserDatabase } from './database/UserDatabase'
+import { BaseDatabase } from './database/BaseDatabase'
 
 const app = express()
 
@@ -31,20 +33,13 @@ app.get("/ping", async (req: Request, res: Response) => {
         }
     }
 })
-
+//refatorado
 app.get("/users", async (req: Request, res: Response) => {
     try {
-        const q = req.query.q
+        const q = req.query.q as string
+        const userDatabase = new UserDatabase()
 
-        let usersDB
-
-        if (q) {
-            const result: TUserDB[] = await db("users").where("name", "LIKE", `%${q}%`)
-            usersDB = result
-        } else {
-            const result: TUserDB[] = await db("users")
-            usersDB = result
-        }
+        const usersDB = await userDatabase.findUsers(q)
 
         const users: User[] = usersDB.map((userDB) => new User(
             userDB.id,
@@ -69,7 +64,7 @@ app.get("/users", async (req: Request, res: Response) => {
         }
     }
 })
-
+//refatorado
 app.post("/users", async (req: Request, res: Response) => {
     try {
         const { id, name, email, password } = req.body
@@ -93,8 +88,10 @@ app.post("/users", async (req: Request, res: Response) => {
             res.status(400)
             throw new Error("'password' deve ser string")
         }
+        const userDatabase = new UserDatabase()
+        const userDBExists = await userDatabase.findUserById(id)
 
-        const [ userDBExists ]: TUserDB[] | undefined[] = await db("users").where({ id })
+        // const [ userDBExists ]: TUserDB[] | undefined[] = await db("users").where({ id })
 
         if (userDBExists) {
             res.status(400)
@@ -117,7 +114,7 @@ app.post("/users", async (req: Request, res: Response) => {
             created_at: newUser.getCreatedAt()
         }
 
-        await db("users").insert(newUserDB)
+        await userDatabase.insertUser(newUserDB)
 
         res.status(201).send(newUser)
     } catch (error) {
@@ -135,10 +132,11 @@ app.post("/users", async (req: Request, res: Response) => {
     }
 })
 
+//refatorado
 app.get("/accounts", async (req: Request, res: Response) => {
     try {
-        const accountsDB: TAccountDB[] = await db("accounts")
-
+        const userDatabase = new UserDatabase()
+        const accountsDB = await userDatabase.findAccount()
         const accounts = accountsDB.map((accountDB) => new Account(
             accountDB.id,
             accountDB.balance,
@@ -161,27 +159,30 @@ app.get("/accounts", async (req: Request, res: Response) => {
         }
     }
 })
-
+//refatorado
 app.get("/accounts/:id/balance", async (req: Request, res: Response) => {
     try {
+        //recebimento do id por parametro
         const id = req.params.id
-
-        const [ accountDB ]: TAccountDB[] | undefined[] = await db("accounts").where({ id })
+        const userDatabase = new UserDatabase()
+        
+        const accountDB = await userDatabase.findAccountById(id)
+        // const [ accountDB ]: TAccountDB[] | undefined[] = await db("accounts").where({ id })
 
         if (!accountDB) {
             res.status(404)
             throw new Error("'id' não encontrado")
         }
+        //variavel account usando a classe Account e recebendo o accountDB
+        // const account = new Account(
+        //     accountDB.id,
+        //     accountDB.balance,
+        //     accountDB.owner_id,
+        //     accountDB.created_at
+        // )
 
-        const account = new Account(
-            accountDB.id,
-            accountDB.balance,
-            accountDB.owner_id,
-            accountDB.created_at
-        )
-
-        const balance = account.getBalance()
-
+        // const balance = account.getBalance()
+        const balance = accountDB.balance
         res.status(200).send({ balance })
     } catch (error) {
         console.log(error)
@@ -197,8 +198,7 @@ app.get("/accounts/:id/balance", async (req: Request, res: Response) => {
         }
     }
 })
-
-
+// refatorado
 app.post("/accounts", async (req: Request, res: Response) => {
     try {
         const { id, ownerId } = req.body
@@ -212,8 +212,10 @@ app.post("/accounts", async (req: Request, res: Response) => {
             res.status(400)
             throw new Error("'ownerId' deve ser string")
         }
-
-        const [ accountDBExists ]: TAccountDB[] | undefined[] = await db("accounts").where({ id })
+        
+        const userDatabase = new UserDatabase()
+        const accountDBExists = await userDatabase.findAccountById(id)
+        // const [ accountDBExists ]: TAccountDB[] | undefined[] = await db("accounts").where({ id })
 
         if (accountDBExists) {
             res.status(400)
@@ -222,7 +224,7 @@ app.post("/accounts", async (req: Request, res: Response) => {
 
         const newAccount = new Account(
             id,
-            0,
+            10,
             ownerId,
             new Date().toISOString()
         )
@@ -234,7 +236,7 @@ app.post("/accounts", async (req: Request, res: Response) => {
             created_at: newAccount.getCreatedAt()
         }
 
-        await db("accounts").insert(newAccountDB)
+        await userDatabase.insertAccount(newAccountDB)
 
         res.status(201).send(newAccount)
     } catch (error) {
@@ -252,47 +254,48 @@ app.post("/accounts", async (req: Request, res: Response) => {
     }
 })
 
-app.put("/accounts/:id/balance", async (req: Request, res: Response) => {
-    try {
-        const id = req.params.id
-        const value = req.body.value
+// app.put("/accounts/:id/balance", async (req: Request, res: Response) => {
+//     try {
+//         const id = req.params.id
+//         const value = req.body.value
 
-        if (typeof value !== "number") {
-            res.status(400)
-            throw new Error("'value' deve ser number")
-        }
+//         if (typeof value !== "number") {
+//             res.status(400)
+//             throw new Error("'value' deve ser number")
+//         }
+//         const userDatabase = new UserDatabase()
+//         const accountDB = await userDatabase.findAccountById(id)
+//         // const [ accountDB ]: TAccountDB[] | undefined[] = await db("accounts").where({ id })
 
-        const [ accountDB ]: TAccountDB[] | undefined[] = await db("accounts").where({ id })
+//         if (!accountDB) {
+//             res.status(404)
+//             throw new Error("'id' não encontrado")
+//         }
 
-        if (!accountDB) {
-            res.status(404)
-            throw new Error("'id' não encontrado")
-        }
+//         const account = new Account(
+//             accountDB.id,
+//             accountDB.balance,
+//             accountDB.owner_id,
+//             accountDB.created_at
+//         )
 
-        const account = new Account(
-            accountDB.id,
-            accountDB.balance,
-            accountDB.owner_id,
-            accountDB.created_at
-        )
+//         const newBalance = account.getBalance() + value
+//         account.setBalance(newBalance)
 
-        const newBalance = account.getBalance() + value
-        account.setBalance(newBalance)
-
-        await db("accounts").update({ balance: newBalance }).where({ id })
+//         await BaseDatabase.connection("accounts").update({ balance: newBalance }).where({ id })
         
-        res.status(200).send(account)
-    } catch (error) {
-        console.log(error)
+//         res.status(200).send(account)
+//     } catch (error) {
+//         console.log(error)
 
-        if (req.statusCode === 200) {
-            res.status(500)
-        }
+//         if (req.statusCode === 200) {
+//             res.status(500)
+//         }
 
-        if (error instanceof Error) {
-            res.send(error.message)
-        } else {
-            res.send("Erro inesperado")
-        }
-    }
-})
+//         if (error instanceof Error) {
+//             res.send(error.message)
+//         } else {
+//             res.send("Erro inesperado")
+//         }
+//     }
+// })
